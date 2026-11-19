@@ -276,25 +276,70 @@ def piece_jouee(coups_san: pd.Series) -> pd.Series:
     return premiere.map(PIECES).mask(premiere == "O", "roi").fillna("pion")
 
 
-def fautes_par_case(df, pieces=None, gravites=None, phases=None) -> pd.DataFrame:
-    """Mes coups jugés mauvais comptés par case d'arrivée, séparés par la couleur jouée.
+PENDULE_ECHIQUIER = [0, 10, 30, 60, 120, float("inf")]
+PENDULE_ECHIQUIER_NOMS = ["< 10 s", "10-30 s", "30 s-1 min", "1-2 min", "> 2 min"]
+COLONNES_CASES = [
+    "couleur",
+    "case",
+    "colonne",
+    "rangee",
+    "fautes",
+    "gaffes",
+    "part_gaffes",
+    "perte",
+    "piece_top",
+]
 
-    Colonnes : couleur, case, colonne (a-h), rangee (1-8), fautes, gaffes, part_gaffes,
-    perte (cp moyens), piece_top (la pièce la plus souvent fautive sur cette case).
+
+def coups_filtres(
+    df,
+    pieces=None,
+    gravites=None,
+    phases=None,
+    familles=None,
+    resultats=None,
+    pendules=None,
+) -> pd.DataFrame:
+    """Mes coups jugés mauvais dans les parties filtrées, avec pièce, gravité et tranche de pendule.
+
+    Chaque filtre vaut None (pas de filtre) ou une liste de valeurs gardées :
+    pieces (ORDRE_PIECES), gravites (imprécision, erreur, gaffe), phases (ORDRE_PHASES),
+    familles (ouverture_famille), resultats (victoire, nulle, défaite),
+    pendules (PENDULE_ECHIQUIER_NOMS : le temps qui me restait après le coup).
     """
+    if familles is not None:
+        df = df[df["ouverture_famille"].isin(familles)]
+    if resultats is not None:
+        df = df[df["resultat"].isin(resultats)]
     c = de(coups(), df)
-    c = c.assign(piece=piece_jouee(c["coup"]), gravite=c["jugement"].map(JUGEMENTS))
+    c = c.assign(
+        piece=piece_jouee(c["coup"]),
+        gravite=c["jugement"].map(JUGEMENTS),
+        pendule=pd.cut(
+            c["temps_restant_s"], PENDULE_ECHIQUIER, right=False, labels=PENDULE_ECHIQUIER_NOMS
+        ),
+    )
     if pieces is not None:
         c = c[c["piece"].isin(pieces)]
     if gravites is not None:
         c = c[c["gravite"].isin(gravites)]
     if phases is not None:
         c = c[c["phase"].isin(phases)]
+    if pendules is not None:  # les coups sans pendule enregistrée sont alors écartés
+        c = c[c["pendule"].isin(pendules)]
+    return c
+
+
+def fautes_par_case(df, **filtres) -> pd.DataFrame:
+    """Mes coups jugés mauvais comptés par case d'arrivée, séparés par la couleur jouée.
+
+    Filtres : ceux de coups_filtres. Colonnes : couleur, case, colonne (a-h), rangee (1-8),
+    fautes, gaffes, part_gaffes, perte (cp, médiane), piece_top (la pièce la plus fautive).
+    """
+    c = coups_filtres(df, **filtres)
     c = c.assign(case=case_arrivee(c["coup"], c["couleur"])).dropna(subset=["case"])
     if c.empty:
-        return pd.DataFrame(
-            columns=["couleur", "case", "colonne", "rangee", "fautes", "gaffes", "part_gaffes"]
-        )
+        return pd.DataFrame(columns=COLONNES_CASES)
     g = (
         c.groupby(["couleur", "case"])
         .agg(
@@ -308,7 +353,43 @@ def fautes_par_case(df, pieces=None, gravites=None, phases=None) -> pd.DataFrame
     g["part_gaffes"] = g["gaffes"] / g["fautes"]
     g["colonne"] = g["case"].str[0]
     g["rangee"] = g["case"].str[1].astype(int)
-    return g
+    return g[COLONNES_CASES]
+
+
+def fautes_par_piece(df, **filtres) -> pd.DataFrame:
+    """Erreurs et gaffes par pièce jouée, la pièce la plus fautive d'abord.
+
+    Filtres : ceux de coups_filtres (sauf pieces, la figure compare justement les pièces).
+    Colonnes : piece, erreurs, gaffes, fautes (erreurs + gaffes), par_partie (fautes par partie),
+    part_gaffes (gaffes / fautes), perte (cp, médiane), parties (nombre de parties comptées).
+    """
+    filtres.pop("pieces", None)
+    if filtres.get("familles") is not None:
+        df = df[df["ouverture_famille"].isin(filtres["familles"])]
+    if filtres.get("resultats") is not None:
+        df = df[df["resultat"].isin(filtres["resultats"])]
+    n = df["partie_id"].nunique()
+    c = coups_filtres(df, **filtres)
+    c = c[c["jugement"].isin(["mistake", "blunder"])]
+    g = (
+        c.groupby("piece")
+        .agg(
+            erreurs=("jugement", lambda j: (j == "mistake").sum()),
+            gaffes=("jugement", lambda j: (j == "blunder").sum()),
+            perte=("variation_eval_cp", "median"),
+        )
+        .reindex(ORDRE_PIECES)
+        .rename_axis("piece")
+        .reset_index()
+    )
+    # une pièce sans faute : 0 erreur, 0 gaffe, mais une perte inconnue (NaN), pas 0 cp
+    g[["erreurs", "gaffes"]] = g[["erreurs", "gaffes"]].fillna(0).astype(int)
+    g["fautes"] = g["erreurs"] + g["gaffes"]
+    g["par_partie"] = g["fautes"] / max(n, 1)
+    # part vide (NaN) pour une pièce sans faute, plutôt qu'une division par zéro
+    g["part_gaffes"] = g["gaffes"] / g["fautes"].where(g["fautes"] > 0)
+    g["parties"] = n
+    return g.sort_values("fautes", ascending=False).reset_index(drop=True)
 
 
 def fins_de_partie(df: pd.DataFrame) -> pd.DataFrame:

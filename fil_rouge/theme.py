@@ -19,6 +19,7 @@ SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#62
 
 PHASES = {"ouverture": SERIES[0], "milieu": SERIES[1], "finale": SERIES[2]}
 RESULTATS = {"victoire": "#2a78d6", "nulle": NEUTRE, "défaite": "#e34948"}
+GRAVITES = {"erreur": "#ec9a96", "gaffe": "#c13a3a"}  # du clair au foncé : la gravité
 MOI_ADV = {"moi": SERIES[0], "adversaire": NEUTRE}
 
 # Divergente rouge <-> bleu, gris au milieu (0,5 = autant de points gagnés que perdus)

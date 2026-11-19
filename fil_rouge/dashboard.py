@@ -371,7 +371,7 @@ def maj_ouvertures(plateformes, cadence, couleur, annees, axe, min_n):
 )
 def maj_echiquier(plateformes, cadence, couleur, annees, mesure, pieces, gravites, phases):
     df = vue(plateformes, cadence, couleur, annees)
-    return gr.fig_echiquier(df, mesure, pieces, gravites, phases)
+    return gr.fig_echiquier(df, mesure, pieces=pieces, gravites=gravites, phases=phases)
 
 
 if __name__ == "__main__":

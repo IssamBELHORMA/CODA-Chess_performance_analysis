@@ -1,7 +1,9 @@
-"""Les figures du dashboard, communes à Dash (dashboard.py) et Streamlit (app_streamlit.py).
+"""Les figures du dashboard, communes à Dash, à app_streamlit.py (CSV) et à app_api.py (API).
 
-Chaque fonction reçoit les parties déjà filtrées et renvoie une figure Plotly,
-ou du texte simple pour les indicateurs et le verdict. Aucune ne dépend de Dash ou de Streamlit.
+Deux formes pour chaque figure :
+- fig_x(parties filtrées) calcule l'agrégat avec analyses.py, puis le dessine ;
+- fig_x_depuis(agrégat) dessine seulement : app_api.py lui passe la réponse de l'API.
+Aucune ne dépend de Dash ou de Streamlit.
 """
 
 import analyses as an
@@ -45,7 +47,11 @@ def pct(x, decimales=0):
 
 def kpis(df) -> list[tuple[str, str, str]]:
     """Les indicateurs du haut : (valeur, libellé, détail)."""
-    k = an.kpis(df)
+    return kpis_depuis(an.kpis(df))
+
+
+def kpis_depuis(k: dict) -> list[tuple[str, str, str]]:
+    """Les mêmes indicateurs, à partir du dict de analyses.kpis (ou de GET /indicateurs)."""
     if not k:
         return [("0", "parties", "")]
     elo = k["elo"]
@@ -146,7 +152,10 @@ def verdict(df) -> list[str]:
 
 
 def fig_elo(df):
-    d = an.courbe_elo(df)
+    return fig_elo_depuis(an.courbe_elo(df))
+
+
+def fig_elo_depuis(d):
     if d.empty:
         return vide()
     fig = px.line(
@@ -168,7 +177,10 @@ def fig_elo(df):
 
 
 def fig_gaffes_temps(df):
-    d = an.gaffes_dans_le_temps(df)
+    return fig_gaffes_temps_depuis(an.gaffes_dans_le_temps(df))
+
+
+def fig_gaffes_temps_depuis(d):
     if d.empty:
         return vide("Pas assez de parties par trimestre")
     fig = px.line(
@@ -192,7 +204,10 @@ def fig_gaffes_temps(df):
 
 
 def fig_gaches(df):
-    d = an.avantages_gaches(df)
+    return fig_gaches_depuis(an.avantages_gaches(df))
+
+
+def fig_gaches_depuis(d):
     if d.empty:
         return vide("Aucune position gagnante gâchée")
     fig = px.bar(
@@ -213,7 +228,10 @@ def fig_gaches(df):
 
 
 def fig_pendule(df):
-    d = an.pendule(df)
+    return fig_pendule_depuis(an.pendule(df))
+
+
+def fig_pendule_depuis(d):
     if d.empty:
         return vide("Pas de pendule enregistrée pour ces parties")
     d = d.assign(part=100 * d["part"])
@@ -238,7 +256,11 @@ def fig_pendule(df):
 
 
 def fig_temps_coup(df, seulement="toutes"):
-    d = an.temps_par_coup(df, seulement).dropna()
+    return fig_temps_coup_depuis(an.temps_par_coup(df, seulement))
+
+
+def fig_temps_coup_depuis(d):
+    d = d.dropna()
     if d.empty:
         return vide("Pas de temps enregistré pour ces parties")
     fig = px.bar(
@@ -264,7 +286,10 @@ def fig_temps_coup(df, seulement="toutes"):
 
 
 def fig_fins(df):
-    d = an.fins_de_partie(df)
+    return fig_fins_depuis(an.fins_de_partie(df))
+
+
+def fig_fins_depuis(d):
     if d.empty:
         return vide()
     d = d.assign(part=100 * d["part"])
@@ -292,7 +317,10 @@ def fig_fins(df):
 
 
 def fig_heure(df):
-    d = an.score_par_heure(df)
+    return fig_heure_depuis(an.score_par_heure(df), df["score"].mean())
+
+
+def fig_heure_depuis(d, moyenne: float):
     if d.empty:
         return vide("Aucune heure avec 30 parties")
     fig = px.bar(
@@ -307,10 +335,10 @@ def fig_heure(df):
         hovertemplate="%{x} h<br>score %{y:.2f}<br>%{customdata[0]} parties<extra></extra>",
     )
     fig.add_hline(
-        y=df["score"].mean(),
+        y=moyenne,
         line_dash="dot",
         line_color=th.TEXTE_2,
-        annotation_text=f"moyenne {df['score'].mean():.2f}",
+        annotation_text=f"moyenne {moyenne:.2f}",
         annotation_font_color=th.TEXTE_2,
     )
     return fig.update_layout(height=340, xaxis_dtick=1, yaxis_range=[0, 1])
@@ -318,6 +346,11 @@ def fig_heure(df):
 
 def fig_ouvertures(df, axe="couleur", min_n=30):
     score, n = an.ouvertures_croisees(df, axe, min_n)
+    return fig_ouvertures_depuis(score, n, min_n)
+
+
+def fig_ouvertures_depuis(score: pd.DataFrame, n: pd.DataFrame, min_n: int = 30):
+    """score et n : familles en lignes, colonnes croisées (« toutes » d'abord)."""
     if score.empty:
         return vide(f"Aucune famille d'au moins {min_n} parties")
     cols = [str(c) for c in score.columns]
@@ -353,7 +386,10 @@ def fig_ouvertures(df, axe="couleur", min_n=30):
 
 
 def fig_natures(df):
-    d = an.types_fautes(df)
+    return fig_natures_depuis(an.types_fautes(df))
+
+
+def fig_natures_depuis(d):
     if d.empty:
         return vide()
     fig = px.bar(
@@ -412,9 +448,16 @@ def _plateau(cases: pd.DataFrame, couleur: str, mesure: str, min_case: int):
     return list(colonnes), list(rangees), z, texte, info
 
 
-def fig_echiquier(df, mesure="fautes", pieces=None, gravites=None, phases=None, min_case=15):
-    """Deux échiquiers, avec les blancs et avec les noirs : où arrivent mes coups jugés mauvais."""
-    cases = an.fautes_par_case(df, pieces, gravites, phases)
+def fig_echiquier(df, mesure="fautes", min_case=15, **filtres):
+    """Deux échiquiers, avec les blancs et avec les noirs : où arrivent mes coups jugés mauvais.
+
+    filtres : ceux de analyses.coups_filtres (pieces, gravites, phases, familles, resultats, pendules).
+    """
+    return fig_echiquier_depuis(an.fautes_par_case(df, **filtres), mesure, min_case)
+
+
+def fig_echiquier_depuis(cases: pd.DataFrame, mesure="fautes", min_case=15):
+    """cases : le tableau de analyses.fautes_par_case (ou de GET /echiquier)."""
     if cases.empty:
         return vide("Aucune faute pour ces filtres")
     titre_barre = MESURES_ECHIQUIER[mesure][2]
@@ -504,3 +547,53 @@ def fig_echiquier(df, mesure="fautes", pieces=None, gravites=None, phases=None, 
         margin={"t": 40, "l": 8, "r": 8, "b": 8},
     )
     return fig
+
+
+def fig_pieces(df, **filtres):
+    """Erreurs et gaffes par partie pour chaque pièce, la plus fautive en haut."""
+    return fig_pieces_depuis(an.fautes_par_piece(df, **filtres))
+
+
+def fig_pieces_depuis(d: pd.DataFrame):
+    """d : le tableau de analyses.fautes_par_piece (ou de GET /pieces)."""
+    if d.empty or d["fautes"].sum() == 0:
+        return vide("Aucune erreur ni gaffe pour ces filtres")
+    n = max(int(d["parties"].iloc[0]), 1)
+    long = d.melt(
+        id_vars=["piece", "fautes", "part_gaffes", "perte"],
+        value_vars=["erreurs", "gaffes"],
+        var_name="gravite",
+        value_name="nombre",
+    ).assign(par_partie=lambda x: x["nombre"] / n)
+    long["gravite"] = long["gravite"].map({"erreurs": "erreur", "gaffes": "gaffe"})
+    fig = px.bar(
+        long,
+        y="piece",
+        x="par_partie",
+        color="gravite",
+        orientation="h",
+        category_orders={"piece": d["piece"].tolist(), "gravite": ["gaffe", "erreur"]},
+        color_discrete_map=th.GRAVITES,
+        custom_data=["nombre", "fautes", "part_gaffes", "perte"],
+        labels={"piece": "", "par_partie": "erreurs et gaffes par partie", "gravite": ""},
+    )
+    fig.update_traces(
+        marker_line_color=th.SURFACE,
+        marker_line_width=2,
+        hovertemplate="<b>%{y}</b><br>%{x:.2f} %{fullData.name} par partie (%{customdata[0]})"
+        "<br>%{customdata[1]} erreurs et gaffes, dont %{customdata[2]:.0%} de gaffes"
+        "<br>perte médiane %{customdata[3]:.0f} cp<extra></extra>",
+    )
+    # La part de gaffes au bout de chaque barre : une pièce peut être peu fautive mais grave
+    for _, ligne in d[d["fautes"] > 0].iterrows():
+        fig.add_annotation(
+            x=ligne["fautes"] / n,
+            y=ligne["piece"],
+            text=f"{ligne['part_gaffes']:.0%} de gaffes",
+            showarrow=False,
+            xanchor="left",
+            xshift=6,
+            font={"size": 11, "color": th.TEXTE_2},
+        )
+    fig.update_xaxes(range=[0, d["fautes"].max() / n * 1.3])
+    return fig.update_layout(height=340, barmode="stack", clickmode="event+select")

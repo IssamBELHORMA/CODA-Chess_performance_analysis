@@ -150,8 +150,8 @@ def carte(titre, aide, fig, key):
 
 st.divider()
 st.header("Pourquoi je stagne : le détail")
-travail, stagnation, temps, ouvertures = st.tabs(
-    ["À travailler", "La stagnation", "Le temps", "Ouvertures et fautes"]
+travail, stagnation, temps, ouvertures, echiquier = st.tabs(
+    ["À travailler", "La stagnation", "Le temps", "Ouvertures et fautes", "L'échiquier"]
 )
 
 with travail:
@@ -253,4 +253,108 @@ with ouvertures:
         "Tactique ratée : je ne vois pas la mienne.",
         gr.fig_natures(vue),
         "fig_natures",
+    )
+
+
+# ---------------------------------------------------------------- onglet « L'échiquier »
+
+
+def tout_ou_rien(choix: list, toutes: list):
+    """Tout coché = pas de filtre (None) : les coups sans pendule enregistrée restent comptés."""
+    return None if set(choix) == set(toutes) else choix
+
+
+def choisir_piece():
+    """Clic sur une barre des pièces : l'échiquier ne montre plus que cette pièce.
+
+    Un callback s'exécute avant la relance : on peut alors changer la valeur d'un widget.
+    """
+    points = st.session_state["fig_pieces"].selection.points
+    if points:
+        st.session_state["ech_pieces"] = [points[0]["y"]]
+
+
+def toutes_les_pieces():
+    st.session_state["ech_pieces"] = list(an.ORDRE_PIECES)
+
+
+with echiquier:
+    st.caption(
+        "Ces filtres s'ajoutent à ceux de la barre latérale. Le graphique des pièces les suit "
+        "tous sauf « Pièce », pour garder la comparaison entre pièces."
+    )
+    f1, f2, f3 = st.columns(3)
+    familles_vues = vue["ouverture_famille"].value_counts().index.tolist()
+    famille_choisie = f1.selectbox(
+        "Famille d'ouvertures", ["toutes", *familles_vues], key="ech_famille"
+    )
+    resultats = f2.multiselect(
+        "Résultat de la partie",
+        ["victoire", "nulle", "défaite"],
+        default=["victoire", "nulle", "défaite"],
+        key="ech_resultats",
+    )
+    pendules = f3.multiselect(
+        "Temps restant après le coup",
+        an.PENDULE_ECHIQUIER_NOMS,
+        default=an.PENDULE_ECHIQUIER_NOMS,
+        key="ech_pendules",
+    )
+    f4, f5, f6 = st.columns(3)
+    if "ech_pieces" not in st.session_state:
+        st.session_state["ech_pieces"] = list(an.ORDRE_PIECES)
+    pieces_choisies = f4.multiselect("Pièce", an.ORDRE_PIECES, key="ech_pieces")
+    gravites = f5.multiselect(
+        "Gravité",
+        ["imprécision", "erreur", "gaffe"],
+        default=["imprécision", "erreur", "gaffe"],
+        key="ech_gravites",
+    )
+    phases_choisies = f6.multiselect(
+        "Phase", an.ORDRE_PHASES, default=an.ORDRE_PHASES, key="ech_phases"
+    )
+
+    filtres = {
+        "familles": None if famille_choisie == "toutes" else [famille_choisie],
+        "resultats": tout_ou_rien(resultats, ["victoire", "nulle", "défaite"]),
+        "pendules": tout_ou_rien(pendules, an.PENDULE_ECHIQUIER_NOMS),
+        "gravites": tout_ou_rien(gravites, ["imprécision", "erreur", "gaffe"]),
+        "phases": tout_ou_rien(phases_choisies, an.ORDRE_PHASES),
+    }
+
+    st.subheader("La pièce avec laquelle je fais le plus d'erreurs et de gaffes")
+    st.caption(
+        "Erreurs et gaffes par partie, la pire pièce en haut ; à droite de chaque barre, la part "
+        "de gaffes. Cliquez une barre pour limiter l'échiquier à cette pièce."
+    )
+    st.plotly_chart(
+        gr.fig_pieces(vue, **filtres),
+        key="fig_pieces",
+        theme=None,
+        on_select=choisir_piece,
+        selection_mode="points",
+        config={"displayModeBar": False},
+    )
+    st.button("Toutes les pièces", on_click=toutes_les_pieces, key="ech_reset")
+
+    st.subheader("Où arrivent mes coups jugés mauvais")
+    mesure = st.radio(
+        "Mesure",
+        list(gr.MESURES_ECHIQUIER),
+        format_func=lambda m: gr.MESURES_ECHIQUIER[m][2],
+        horizontal=True,
+        key="ech_mesure",
+    )
+    st.caption(
+        "Chaque échiquier est vu de mon côté (rangée 1 en bas avec les blancs, 8 avec les noirs). "
+        "Part de gaffes et perte médiane : cases d'au moins 15 fautes, les autres restent vides. "
+        "Survolez une case pour la pièce la plus fautive."
+    )
+    st.plotly_chart(
+        gr.fig_echiquier(
+            vue, mesure, pieces=tout_ou_rien(pieces_choisies, an.ORDRE_PIECES), **filtres
+        ),
+        key="fig_echiquier",
+        theme=None,
+        config={"displayModeBar": False},
     )
