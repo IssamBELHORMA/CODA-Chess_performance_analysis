@@ -26,7 +26,9 @@ HOTE = "0.0.0.0" if "PORT" in os.environ else "127.0.0.1"
 # le serveur est de toute façon public tant que le tunnel tourne.
 TUNNEL = os.environ.get("MCP_TUNNEL") == "1"
 SECU = TransportSecuritySettings(enable_dns_rebinding_protection=False) if TUNNEL else None
-mcp = FastMCP("echecs", host=HOTE, port=int(os.environ.get("PORT", "8001")), transport_security=SECU)
+mcp = FastMCP(
+    "echecs", host=HOTE, port=int(os.environ.get("PORT", "8001")), transport_security=SECU
+)
 
 # TODO 1. Une fonction qui appelle l'API et lève une erreur si la réponse n'est pas un succès
 # TODO 2. @mcp.tool() : mes pires ouvertures pour une cadence (GET /ouvertures). Typez cadence avec

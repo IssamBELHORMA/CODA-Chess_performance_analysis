@@ -251,6 +251,66 @@ def types_fautes(df: pd.DataFrame) -> pd.DataFrame:
     return g
 
 
+PIECES = {"K": "roi", "Q": "dame", "R": "tour", "B": "fou", "N": "cavalier"}
+ORDRE_PIECES = ["pion", "cavalier", "fou", "tour", "dame", "roi"]
+JUGEMENTS = {"inaccuracy": "imprécision", "mistake": "erreur", "blunder": "gaffe"}
+COLONNES_ECHIQUIER = "abcdefgh"
+
+
+def case_arrivee(coups_san: pd.Series, couleur: pd.Series) -> pd.Series:
+    """La case où arrive la pièce, lue dans la notation : Nxe5 -> e5, e8=Q+ -> e8.
+
+    Le roque n'a pas de case écrite : O-O va en g1 (g8 avec les noirs), O-O-O en c1 (c8).
+    """
+    case = coups_san.str.findall(r"[a-h][1-8]").str[-1]
+    rangee = couleur.map({"white": "1", "black": "8"})
+    grand = coups_san.str.startswith("O-O-O")
+    petit = coups_san.str.startswith("O-O") & ~grand
+    case = case.mask(petit, "g" + rangee).mask(grand, "c" + rangee)
+    return case
+
+
+def piece_jouee(coups_san: pd.Series) -> pd.Series:
+    """La pièce qui bouge : la première lettre (N, B, R, Q, K), un pion sinon, le roi pour le roque."""
+    premiere = coups_san.str[0]
+    return premiere.map(PIECES).mask(premiere == "O", "roi").fillna("pion")
+
+
+def fautes_par_case(df, pieces=None, gravites=None, phases=None) -> pd.DataFrame:
+    """Mes coups jugés mauvais comptés par case d'arrivée, séparés par la couleur jouée.
+
+    Colonnes : couleur, case, colonne (a-h), rangee (1-8), fautes, gaffes, part_gaffes,
+    perte (cp moyens), piece_top (la pièce la plus souvent fautive sur cette case).
+    """
+    c = de(coups(), df)
+    c = c.assign(piece=piece_jouee(c["coup"]), gravite=c["jugement"].map(JUGEMENTS))
+    if pieces is not None:
+        c = c[c["piece"].isin(pieces)]
+    if gravites is not None:
+        c = c[c["gravite"].isin(gravites)]
+    if phases is not None:
+        c = c[c["phase"].isin(phases)]
+    c = c.assign(case=case_arrivee(c["coup"], c["couleur"])).dropna(subset=["case"])
+    if c.empty:
+        return pd.DataFrame(
+            columns=["couleur", "case", "colonne", "rangee", "fautes", "gaffes", "part_gaffes"]
+        )
+    g = (
+        c.groupby(["couleur", "case"])
+        .agg(
+            fautes=("coup", "size"),
+            gaffes=("jugement", lambda j: (j == "blunder").sum()),
+            perte=("variation_eval_cp", "median"),  # médiane : quelques pertes énormes (mats)
+            piece_top=("piece", lambda p: p.value_counts().index[0]),
+        )
+        .reset_index()
+    )
+    g["part_gaffes"] = g["gaffes"] / g["fautes"]
+    g["colonne"] = g["case"].str[0]
+    g["rangee"] = g["case"].str[1].astype(int)
+    return g
+
+
 def fins_de_partie(df: pd.DataFrame) -> pd.DataFrame:
     """Comment se terminent mes défaites et mes victoires."""
     d = df[df["resultat"] != "nulle"]

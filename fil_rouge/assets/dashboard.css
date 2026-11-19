@@ -195,3 +195,23 @@ h2.section {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Contrôles de l'échiquier : une ligne par réglage (mesure, pièces, gravité, phase) */
+.carte-tete .controle:has(.controles-echiquier) {
+  max-width: none;
+}
+
+.controles-echiquier {
+  display: grid;
+  gap: 4px;
+}
+
+.controle .dash-checklist label {
+  display: inline-block;
+  font-size: 14px;
+  margin-right: 14px;
+}
+
+.controle input[type="checkbox"] {
+  accent-color: var(--accent);
+}

@@ -30,6 +30,16 @@ DIVERGENTE = [
     [1, "#1c5cab"],
 ]
 
+# Séquentielle bleue, du clair (peu) au foncé (beaucoup) : l'intensité d'une case de l'échiquier
+SEQUENTIELLE = [
+    [0, "#cde2fb"],
+    [0.25, "#86b6ef"],
+    [0.5, "#3987e5"],
+    [0.75, "#1c5cab"],
+    [1, "#0d366b"],
+]
+CASE_FONCEE = "rgba(11, 11, 11, 0.14)"  # voile posé sur les cases noires de l'échiquier
+
 POLICE = "Inter, 'Segoe UI', system-ui, -apple-system, sans-serif"
 
 pio.templates["echecs"] = go.layout.Template(

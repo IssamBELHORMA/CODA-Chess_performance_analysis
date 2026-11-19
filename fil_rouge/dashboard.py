@@ -221,6 +221,56 @@ app.layout = html.Main(
             ],
             className="grille",
         ),
+        html.H2("L'échiquier : où tombent mes fautes", className="section"),
+        html.Div(
+            [
+                carte(
+                    "La case d'arrivée de mes coups jugés mauvais",
+                    "Chaque échiquier est vu de mon côté. Le nombre de fautes suit surtout les "
+                    "cases où je joue le plus ; la part de gaffes et la perte montrent où une "
+                    "faute devient grave (cases d'au moins 15 fautes). Survolez une case.",
+                    "fig-echiquier",
+                    controle=html.Div(
+                        [
+                            dcc.RadioItems(
+                                id="echiquier-mesure",
+                                options=[
+                                    {"label": " nombre de fautes", "value": "fautes"},
+                                    {"label": " part de gaffes", "value": "part_gaffes"},
+                                    {"label": " perte médiane (cp)", "value": "perte"},
+                                ],
+                                value="fautes",
+                                inline=True,
+                            ),
+                            dcc.Checklist(
+                                id="echiquier-pieces",
+                                options=[{"label": f" {p}", "value": p} for p in an.ORDRE_PIECES],
+                                value=an.ORDRE_PIECES,
+                                inline=True,
+                            ),
+                            dcc.Checklist(
+                                id="echiquier-gravites",
+                                options=[
+                                    {"label": f" {g}", "value": g}
+                                    for g in ("imprécision", "erreur", "gaffe")
+                                ],
+                                value=["imprécision", "erreur", "gaffe"],
+                                inline=True,
+                            ),
+                            dcc.Checklist(
+                                id="echiquier-phases",
+                                options=[{"label": f" {p}", "value": p} for p in an.ORDRE_PHASES],
+                                value=an.ORDRE_PHASES,
+                                inline=True,
+                            ),
+                        ],
+                        className="controles-echiquier",
+                    ),
+                    large=True,
+                ),
+            ],
+            className="grille",
+        ),
     ],
     className="page",
 )
@@ -309,6 +359,19 @@ def maj_temps_coup(plateformes, cadence, couleur, annees, seulement):
 )
 def maj_ouvertures(plateformes, cadence, couleur, annees, axe, min_n):
     return gr.fig_ouvertures(vue(plateformes, cadence, couleur, annees), axe, min_n)
+
+
+@callback(
+    Output("fig-echiquier", "figure"),
+    *FILTRES,
+    Input("echiquier-mesure", "value"),
+    Input("echiquier-pieces", "value"),
+    Input("echiquier-gravites", "value"),
+    Input("echiquier-phases", "value"),
+)
+def maj_echiquier(plateformes, cadence, couleur, annees, mesure, pieces, gravites, phases):
+    df = vue(plateformes, cadence, couleur, annees)
+    return gr.fig_echiquier(df, mesure, pieces, gravites, phases)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import theme as th
+from plotly.subplots import make_subplots
 
 SERIES_ELO = {
     "chesscom · blitz": th.SERIES[0],
@@ -373,3 +374,133 @@ def fig_natures(df):
         "<extra>%{fullData.name}</extra>",
     )
     return fig.update_layout(height=300, barmode="stack", yaxis_autorange="reversed")
+
+
+MESURES_ECHIQUIER = {
+    "fautes": ("fautes", "{:.0f}", "nombre de fautes"),
+    "part_gaffes": ("part de gaffes", "{:.0%}", "part de gaffes parmi les fautes"),
+    "perte": ("perte médiane", "{:.0f}", "perte médiane (cp)"),
+}
+
+
+def _plateau(cases: pd.DataFrame, couleur: str, mesure: str, min_case: int):
+    """Une grille 8 x 8 vue de mon côté : rangée 1 en bas avec les blancs, rangée 8 avec les noirs."""
+    colonnes = an.COLONNES_ECHIQUIER if couleur == "white" else an.COLONNES_ECHIQUIER[::-1]
+    rangees = range(1, 9) if couleur == "white" else range(8, 0, -1)
+    par_case = cases[cases["couleur"] == couleur].set_index("case")
+    z, texte, info = [], [], []
+    for r in rangees:
+        ligne_z, ligne_t, ligne_i = [], [], []
+        for c in colonnes:
+            case = f"{c}{r}"
+            if case in par_case.index:
+                x = par_case.loc[case]
+                assez = mesure == "fautes" or x["fautes"] >= min_case
+                v = x[mesure] if assez else None
+                ligne_i.append(
+                    [case, int(x["fautes"]), x["part_gaffes"], x["perte"], x["piece_top"]]
+                )
+            else:
+                v = None
+                ligne_i.append([case, 0, None, None, "-"])
+            fmt = MESURES_ECHIQUIER[mesure][1]
+            ligne_z.append(v)
+            ligne_t.append("" if v is None else fmt.format(v))
+        z.append(ligne_z)
+        texte.append(ligne_t)
+        info.append(ligne_i)
+    return list(colonnes), list(rangees), z, texte, info
+
+
+def fig_echiquier(df, mesure="fautes", pieces=None, gravites=None, phases=None, min_case=15):
+    """Deux échiquiers, avec les blancs et avec les noirs : où arrivent mes coups jugés mauvais."""
+    cases = an.fautes_par_case(df, pieces, gravites, phases)
+    if cases.empty:
+        return vide("Aucune faute pour ces filtres")
+    titre_barre = MESURES_ECHIQUIER[mesure][2]
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        subplot_titles=["avec les blancs", "avec les noirs"],
+        horizontal_spacing=0.08,
+    )
+    zmax = None
+    for i, couleur in enumerate(["white", "black"], start=1):
+        colonnes, rangees, z, texte, info = _plateau(cases, couleur, mesure, min_case)
+        fig.add_trace(
+            go.Heatmap(
+                z=z,
+                x=list(range(8)),
+                y=list(range(8)),
+                text=texte,
+                texttemplate="%{text}",
+                textfont={"size": 12},
+                customdata=info,
+                coloraxis="coloraxis",
+                xgap=1,
+                ygap=1,
+                hoverongaps=False,
+                hovertemplate="<b>%{customdata[0]}</b><br>%{customdata[1]} fautes"
+                "<br>part de gaffes %{customdata[2]:.0%}"
+                "<br>perte médiane %{customdata[3]:.0f} cp"
+                "<br>pièce la plus fautive : %{customdata[4]}<extra></extra>",
+            ),
+            row=1,
+            col=i,
+        )
+        valeurs = [v for ligne in z for v in ligne if v is not None]
+        zmax = max([zmax or 0, *valeurs]) if valeurs else zmax
+        axe = "" if i == 1 else str(i)
+        fig.update_xaxes(
+            tickvals=list(range(8)),
+            ticktext=colonnes,
+            showgrid=False,
+            range=[-0.5, 7.5],
+            constrain="domain",
+            row=1,
+            col=i,
+        )
+        fig.update_yaxes(
+            tickvals=list(range(8)),
+            ticktext=[str(r) for r in rangees],
+            showgrid=False,
+            range=[-0.5, 7.5],
+            scaleanchor=f"x{axe}",
+            constrain="domain",
+            row=1,
+            col=i,
+        )
+        # Les cases noires de l'échiquier : a1 est noire, la couleur alterne d'une case à l'autre
+        for ix, c in enumerate(colonnes):
+            for iy, r in enumerate(rangees):
+                if (an.COLONNES_ECHIQUIER.index(c) + r) % 2 == 1:
+                    continue
+                fig.add_shape(
+                    type="rect",
+                    x0=ix - 0.5,
+                    x1=ix + 0.5,
+                    y0=iy - 0.5,
+                    y1=iy + 0.5,
+                    fillcolor=th.CASE_FONCEE,
+                    line_width=0,
+                    layer="above",
+                    xref=f"x{axe}",
+                    yref=f"y{axe}",
+                )
+    fig.update_layout(
+        height=560,
+        coloraxis={
+            "colorscale": th.SEQUENTIELLE,
+            "cmin": 0,
+            "cmax": zmax,
+            "colorbar": {
+                "title": titre_barre,
+                "thickness": 10,
+                "outlinewidth": 0,
+                "len": 0.7,
+                "tickformat": ".0%" if mesure == "part_gaffes" else "",
+            },
+        },
+        margin={"t": 40, "l": 8, "r": 8, "b": 8},
+    )
+    return fig
